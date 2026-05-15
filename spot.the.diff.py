@@ -1,40 +1,8 @@
 """
 HIT137 Assignment 3 - Spot the Difference Game
 Group Assignment - Semester 1, 2026
+Members: Shekhar Bhandari (s396178) and Aashish Kandel (s396381)
 
-RUBRIC CHECKLIST:
-  [x] Codebase organised into at least 3 classes (we have 8)
-  [x] Encapsulation - each class owns its data and methods via __init__
-  [x] Constructor (__init__) in every class
-  [x] Methods on every class
-  [x] Class interaction - App uses ImageProcessor and GameState
-  [x] Inheritance - 5 subclasses extend Alteration via super().__init__
-  [x] Polymorphism - each subclass overrides apply() differently
-  [x] Images load for JPG, PNG, BMP and scale with correct aspect ratio
-  [x] 3+ distinct alteration types (we have 5)
-  [x] Differences subtle but findable
-  [x] Type and position randomised on every load
-  [x] All 5 regions guaranteed non-overlapping
-  [x] Original and modified displayed side by side
-  [x] File dialog to choose image; loading new image resets the round
-  [x] Clicks detected with reasonable tolerance; red circles on both images
-  [x] Score and remaining counter update immediately on correct click
-  [x] Mistake counter shown; clicks disabled at 3 mistakes with clear prompt
-  [x] Counter resets on new image
-  [x] Player notified when all 5 found
-  [x] Reveal button marks unfound differences in blue on both images
-  [x] Remaining counter updates to zero after reveal
-
-Classes:
-    Alteration     - Base class: position, size, overlap check, apply interface
-    DarkenPatch    - Subclass: adaptive shadow scaled to region brightness
-    WarmTint       - Subclass: warm colour cast scaled to channel headroom
-    CoolTint       - Subclass: cool colour cast scaled to channel headroom
-    SatBoost       - Subclass: saturation boost then hue rotation
-    BlurPatch      - Subclass: Gaussian blur on textured regions
-    ImageProcessor - Loads/scales image, generates 5 differences with OpenCV
-    GameState      - Tracks found list, mistakes, score
-    SpotTheDifferenceApp - Tkinter GUI with game-styled interface
 """
 
 import tkinter as tk
@@ -47,10 +15,9 @@ import random
 
 def apply_ellipse_blend(roi, altered, w, h):
     """
-    Blend altered pixels into original using a cosine-falloff ellipse weight map.
-    Effect is strongest at the centre and fades to exactly zero at the boundary,
-    so no hard box or oval edge is ever visible in the output image.
-    Used by every alteration subclass to apply its effect smoothly.
+    Blends the altered region into the original using a soft ellipse mask.
+    Effect is strongest at the centre and fades to zero at the edges.
+    Used by all alteration types.
     """
     cx, cy = w / 2.0, h / 2.0
     ys, xs = np.ogrid[0:h, 0:w]
@@ -64,12 +31,7 @@ def apply_ellipse_blend(roi, altered, w, h):
 
 
 class Alteration:
-    """
-    Base class for one image alteration.
-    Encapsulates patch position (x, y) and size (w, h).
-    Defines the apply() interface that all subclasses must implement.
-    Provides get_centre() for click detection and overlaps() for placement.
-    """
+    """Base class for one difference patch. Stores position and size."""
 
     DEFAULT_SIZE = 65
 
@@ -80,15 +42,15 @@ class Alteration:
         self.h = h
 
     def apply(self, image):
-        """Apply the effect to image and return the modified copy."""
+        """Apply the effect – must be overridden."""
         raise NotImplementedError("Subclasses must implement apply()")
 
     def get_centre(self):
-        """Return (cx, cy) centre used for click detection and circle drawing."""
+        """Centre point for click detection and circle drawing."""
         return (self.x + self.w // 2, self.y + self.h // 2)
 
     def overlaps(self, other, margin=15):
-        """Return True if this patch overlaps another (includes spacing margin)."""
+        """Check if two patches overlap (with a margin)."""
         return not (
             self.x + self.w + margin <= other.x or
             other.x + other.w + margin <= self.x or
@@ -101,12 +63,7 @@ class Alteration:
 
 
 class DarkenPatch(Alteration):
-    """
-    Darkens a region by 28% of its own mean brightness (adaptive).
-    Light areas darken by ~57px, dark areas by minimum 22px.
-    Always looks like a natural shadow — never a black void.
-    Demonstrates inheritance (super().__init__) and polymorphism (apply).
-    """
+    """Darkens a region – adapts to how bright the area is."""
 
     def __init__(self, x, y):
         super().__init__(x, y, random.randint(85, 115), random.randint(85, 115))
@@ -122,12 +79,7 @@ class DarkenPatch(Alteration):
 
 
 class WarmTint(Alteration):
-    """
-    Adds a warm orange/red cast by boosting Red and reducing Blue.
-    Each delta is 40% of that channel's available headroom so it never
-    clips to a solid blob and works on any image brightness.
-    Demonstrates inheritance and polymorphism via apply() override.
-    """
+    """Adds a warm (red/orange) cast. Uses 40% of available headroom."""
 
     def __init__(self, x, y):
         super().__init__(x, y, random.randint(85, 115), random.randint(85, 115))
@@ -146,12 +98,7 @@ class WarmTint(Alteration):
 
 
 class CoolTint(Alteration):
-    """
-    Adds a cool blue/cyan cast by boosting Blue and reducing Red.
-    Uses the same adaptive headroom scaling as WarmTint.
-    Looks like cold shade or moonlight falling on that area.
-    Demonstrates inheritance and polymorphism via apply() override.
-    """
+    """Adds a cool (blue/cyan) cast. Same adaptive scaling as WarmTint."""
 
     def __init__(self, x, y):
         super().__init__(x, y, random.randint(85, 115), random.randint(85, 115))
@@ -170,12 +117,7 @@ class CoolTint(Alteration):
 
 
 class SatBoost(Alteration):
-    """
-    Boosts saturation by +120 then rotates hue by 55-75 degrees in HSV.
-    Boosting saturation first means this works even on near-white or grey
-    pixels where plain hue rotation has no effect (saturation=0).
-    Demonstrates inheritance and polymorphism via apply() override.
-    """
+    """Boosts saturation (+120) then rotates hue (55‑75°). Works on grey areas too."""
 
     def __init__(self, x, y):
         super().__init__(x, y, random.randint(85, 115), random.randint(85, 115))
@@ -194,12 +136,7 @@ class SatBoost(Alteration):
 
 
 class BlurPatch(Alteration):
-    """
-    Blurs a region with a large Gaussian kernel so texture is clearly lost.
-    Skips flat/uniform areas (grey.var() < 80) where blur would be invisible.
-    Falls back to WarmTint if no textured region is found after many attempts.
-    Demonstrates inheritance and polymorphism via apply() override.
-    """
+    """Gaussian blur – only placed where texture variance is high enough."""
 
     def __init__(self, x, y):
         super().__init__(x, y, random.randint(85, 115), random.randint(85, 115))
@@ -215,7 +152,7 @@ class BlurPatch(Alteration):
         return img
 
     def has_texture(self, image):
-        """Return True if region variance is high enough for blur to be visible."""
+        """Return True if region has enough detail for blur to be visible."""
         roi  = image[self.y:self.y + self.h, self.x:self.x + self.w]
         grey = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         return float(grey.var()) >= 80.0
@@ -223,16 +160,8 @@ class BlurPatch(Alteration):
 
 class ImageProcessor:
     """
-    Loads an image, scales it to fit the display window, then places one of
-    each alteration type at a random non-overlapping position.
-    All image manipulation uses OpenCV (Week 9 techniques).
-    Demonstrates encapsulation and class interaction with Alteration subclasses.
-
-    Image scaling works as follows:
-        - Screen width is detected and DISPLAY_MAX is set to fit two images side
-          by side with room for the UI panels.
-        - Each image is scaled down if needed, preserving its aspect ratio.
-        - Small images are never upscaled (scale capped at 1.0).
+    Loads an image, scales it to fit the window, then creates exactly 5
+    non‑overlapping differences (one of each type).
     """
 
     ALTERATION_TYPES = [DarkenPatch, WarmTint, CoolTint, SatBoost, BlurPatch]
@@ -243,20 +172,17 @@ class ImageProcessor:
         self.alterations  = []
         self.img_w = 0
         self.img_h = 0
-        self.display_max  = 500  # default, recalculated on load from screen size
+        self.display_max  = 500  # will be updated based on screen size
 
     def load(self, path, screen_w, screen_h):
         """
-        Load, scale, and generate 5 differences.
-        screen_w and screen_h are the actual window dimensions so the image
-        always fits the available space regardless of monitor size.
-        Returns True on success.
+        Load image, scale it to fit side‑by‑side with the UI.
+        Returns True if successful.
         """
         raw = cv2.imread(path)
         if raw is None:
             return False
 
-        # Each image gets half the window width minus padding, and about 70% of height
         max_w = max(200, screen_w // 2 - 30)
         max_h = max(200, int(screen_h * 0.70))
         self.display_max  = min(max_w, max_h)
@@ -267,7 +193,7 @@ class ImageProcessor:
         return True
 
     def _scale(self, img, max_w, max_h):
-        """Scale image to fit max_w x max_h, preserving aspect ratio."""
+        """Resize image to fit max_w×max_h while keeping aspect ratio."""
         h, w  = img.shape[:2]
         scale = min(max_w / w, max_h / h, 1.0)
         if scale < 1.0:
@@ -276,10 +202,7 @@ class ImageProcessor:
         return img
 
     def _generate(self):
-        """
-        Place one of each alteration type at a random non-overlapping position.
-        BlurPatch checks texture variance and falls back to WarmTint on flat areas.
-        """
+        """Places one of each alteration type randomly without overlap."""
         margin = 15
         self.alterations = []
         types = self.ALTERATION_TYPES[:]
@@ -305,6 +228,7 @@ class ImageProcessor:
                 placed = True
                 break
 
+            # If blur couldn't be placed, fall back to WarmTint
             if not placed and AltClass is BlurPatch:
                 for _ in range(200):
                     x = random.randint(margin, max_x)
@@ -320,12 +244,12 @@ class ImageProcessor:
         self.modified_bgr = modified
 
     def to_photoimage(self, bgr):
-        """Convert OpenCV BGR array to Tkinter PhotoImage for canvas display."""
+        """Convert OpenCV BGR to Tkinter PhotoImage."""
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         return ImageTk.PhotoImage(Image.fromarray(rgb))
 
     def draw_circle(self, bgr, cx, cy, radius, colour, thickness=3):
-        """Draw a circle on a copy of the image and return it."""
+        """Draw a circle on a copy of the image."""
         out = bgr.copy()
         cv2.circle(out, (cx, cy), radius, colour, thickness)
         return out
@@ -333,8 +257,8 @@ class ImageProcessor:
 
 class GameState:
     """
-    Tracks all mutable game data. GUI calls methods here rather than touching
-    variables directly (encapsulation). total_score persists across images.
+    Keeps track of found differences, mistakes, and total score.
+    One instance per game session.
     """
 
     MAX_MISTAKES = 3
@@ -346,18 +270,18 @@ class GameState:
         self.total_score = 0
 
     def new_image(self, num_alterations):
-        """Reset per-image state, keep total_score."""
+        """Reset state for a new image (keeps total_score)."""
         self.found    = [False] * num_alterations
         self.mistakes = 0
         self.locked   = False
 
     def mark_found(self, index):
-        """Mark difference found and increment cumulative score."""
+        """Mark a difference as found and increase total score."""
         self.found[index] = True
         self.total_score += 1
 
     def record_mistake(self):
-        """Increment mistake count. Returns True if now locked out."""
+        """Increment mistake counter. Returns True if max reached (locked)."""
         self.mistakes += 1
         if self.mistakes >= self.MAX_MISTAKES:
             self.locked = True
@@ -380,17 +304,8 @@ class GameState:
 
 class SpotTheDifferenceApp:
     """
-    Main Tkinter application. Game-styled interface with dark theme,
-    score panel, and visual feedback. Composes ImageProcessor and GameState.
-
-    Tkinter features used (Week 8 lecture):
-        Tk(), Frame, Label, Button, Canvas  - widgets
-        pack() and grid()                   - layout managers
-        .bind("<Button-1>", handler)        - mouse click event binding
-        filedialog.askopenfilename()        - file open dialog
-        messagebox.showinfo/showwarning()   - popup message dialogs
-        .config()                           - updating widget properties
-        winfo_screenwidth/height()          - reading screen dimensions
+    Main GUI – uses Tkinter.
+    Handles loading images, clicks, score display, reveal button.
     """
 
     RED   = (0, 0, 255)
@@ -420,14 +335,12 @@ class SpotTheDifferenceApp:
         self.mod_display  = None
 
         self._build_ui()
-
-        # Start maximised so images have as much space as possible
         self.master.state("zoomed")
 
     def _build_ui(self):
-        """Build the full game interface using Frame, Label, Button, Canvas."""
+        """Creates all the widgets: header, score panel, canvases, footer."""
 
-        # Header bar with title and buttons
+        # Header
         header = tk.Frame(self.master, bg=self.PANEL, pady=10)
         header.pack(fill=tk.X)
 
@@ -455,7 +368,7 @@ class SpotTheDifferenceApp:
                                   activebackground="#79c0ff", **btn)
         self.btn_load.pack(side=tk.RIGHT, padx=4)
 
-        # Score panel
+        # Score bar
         score_bar = tk.Frame(self.master, bg="#21262d", pady=8)
         score_bar.pack(fill=tk.X)
 
@@ -467,7 +380,7 @@ class SpotTheDifferenceApp:
                                       fg=self.WARNING, bg="#21262d")
         self.lbl_message.pack(side=tk.RIGHT, padx=20)
 
-        # Two image canvases side by side
+        # Two image areas side by side
         img_area = tk.Frame(self.master, bg=self.BG)
         img_area.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
 
@@ -491,7 +404,7 @@ class SpotTheDifferenceApp:
         img_area.columnconfigure(1, weight=1)
         img_area.rowconfigure(1, weight=1)
 
-        # Only the modified canvas gets click events (Week 8 event binding)
+        # Only the modified canvas gets clicks
         self.canvas_mod.bind("<Button-1>", self._on_click)
 
         # Footer
@@ -502,7 +415,7 @@ class SpotTheDifferenceApp:
                  font=("Courier New", 9), fg=self.SUBTEXT, bg="#161b22").pack()
 
     def _score_pill(self, parent, label, value, colour):
-        """Create a labelled score pill widget and return its value Label."""
+        """Helper to make a fancy score display."""
         frame = tk.Frame(parent, bg="#2d333b", padx=14, pady=4)
         frame.pack(side=tk.LEFT, padx=10)
         tk.Label(frame, text=label, font=("Courier New", 8, "bold"),
@@ -514,7 +427,7 @@ class SpotTheDifferenceApp:
         return val_lbl
 
     def _load_image(self):
-        """Open file dialog, load image, reset game state, refresh display."""
+        """Open file picker, load the image, reset the game."""
         path = filedialog.askopenfilename(
             title="Select an image",
             filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp"),
@@ -522,7 +435,7 @@ class SpotTheDifferenceApp:
         if not path:
             return
 
-        # Read actual window size so images scale to fit the current screen
+        # Get current window size for scaling
         self.master.update_idletasks()
         screen_w = self.master.winfo_width()
         screen_h = self.master.winfo_height()
@@ -542,10 +455,8 @@ class SpotTheDifferenceApp:
 
     def _on_click(self, event):
         """
-        Handle click on the modified canvas.
-        Correct click within CLICK_TOLERANCE draws red circles on both images.
-        Wrong click increments mistake counter; 3 mistakes locks the round.
-        Uses event.x and event.y from Tkinter (Week 8 event binding).
+        Called when user clicks on the modified image.
+        Checks distance to centre of each unfound patch.
         """
         if self.state.locked or self.state.is_complete():
             return
@@ -578,6 +489,7 @@ class SpotTheDifferenceApp:
                                   str(self.state.num_remaining()) + " remaining.")
                 return
 
+        # Wrong click
         locked = self.state.record_mistake()
         self._refresh_labels()
         if locked:
@@ -591,10 +503,7 @@ class SpotTheDifferenceApp:
                           str(self.state.mistakes) + " / 3 mistakes used.")
 
     def _reveal_all(self):
-        """
-        Draw blue circles on all unfound differences on both images.
-        Remaining counter updates to zero and further clicks are locked.
-        """
+        """Draws blue circles around all still‑unfound differences."""
         if self.processor.modified_bgr is None:
             return
         revealed = False
@@ -615,7 +524,7 @@ class SpotTheDifferenceApp:
             self._set_msg("Differences revealed. Load a new image to play again.")
 
     def _refresh_canvases(self):
-        """Convert working BGR arrays to PhotoImages and redraw both canvases."""
+        """Redraw both canvases with the current images."""
         self.orig_photo = self.processor.to_photoimage(self.orig_display)
         self.mod_photo  = self.processor.to_photoimage(self.mod_display)
         for canvas, photo in [(self.canvas_orig, self.orig_photo),
@@ -626,7 +535,7 @@ class SpotTheDifferenceApp:
             canvas.create_image(0, 0, anchor=tk.NW, image=photo)
 
     def _refresh_labels(self):
-        """Update score panel. Mistake colour changes white to yellow to red."""
+        """Update the score, mistakes, and remaining labels."""
         self.lbl_remaining.config(text=str(self.state.num_remaining()))
         mistakes = self.state.mistakes
         colour = self.DANGER if mistakes >= 2 else self.WARNING if mistakes == 1 else self.TEXT

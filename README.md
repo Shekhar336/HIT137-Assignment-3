@@ -1,6 +1,7 @@
 # Spot the Difference Game
 HIT137 – Assignment 3  
 Semester 1, 2026
+Members: Shekhar Bhandari (s396178) and Aashish Kandel (s396381)
 
 ## Project Overview
 
@@ -109,9 +110,8 @@ How to Run the Program
 Download or clone the project files
 Open the project folder
 Run the Python file:
-python main.py
+python spot.the.diff.py
 
-(Replace main.py with the actual filename if needed.)
 
 How to Play
 Click the LOAD IMAGE button
@@ -124,7 +124,7 @@ Use the REVEAL button to display remaining differences
 Project Structure
 project_folder/
 │
-├──spot_the_difference.py
+├──spot.the.diff.py
 ├── README.md
 └── game_report.docx
 
